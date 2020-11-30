@@ -72,6 +72,7 @@ To capture that exception, add this to the controller:
 
 ```ruby
 rescue_from Praroter::Throttled do |e|
+  response.set_header('X-Ratelimit-Cost', e.bucket_state.drained)
   response.set_header('X-Ratelimit-Level', e.bucket_state.level)
   response.set_header('X-Ratelimit-Capacity', e.bucket_state.capacity)
   response.set_header('X-Ratelimit-Retry-After', e.retry_in_seconds)
@@ -141,6 +142,7 @@ def index
 end
 
 rescue_from Praroter::Throttled do |e|
+  response.set_header('X-Ratelimit-Cost', e.bucket_state.drained)
   response.set_header('X-Ratelimit-Level', e.bucket_state.level)
   response.set_header('X-Ratelimit-Capacity', e.bucket_state.capacity)
   response.set_header('X-Ratelimit-Retry-After', e.retry_in_seconds)
@@ -159,6 +161,7 @@ def api_ratelimit
   bucket_state = ratelimit_bucket.drain_block do
     yield
   end
+  response.set_header('X-Ratelimit-Cost', bucket_state.drained)
   response.set_header('X-Ratelimit-Level', bucket_state.level)
   response.set_header('X-Ratelimit-Capacity', bucket_state.capacity)
 end

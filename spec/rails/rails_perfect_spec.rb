@@ -29,6 +29,7 @@ RSpec.describe "Perfect Rails example" do
     include Rails.application.routes.url_helpers
 
     rescue_from Praroter::Throttled do |e|
+      response.set_header('X-Ratelimit-Cost', e.bucket_state.drained)
       response.set_header('X-Ratelimit-Level', e.bucket_state.level)
       response.set_header('X-Ratelimit-Capacity', e.bucket_state.capacity)
       response.set_header('X-Ratelimit-Retry-After', e.retry_in_seconds)
@@ -57,6 +58,7 @@ RSpec.describe "Perfect Rails example" do
       bucket_state = ratelimit_bucket.drain_block do
         yield
       end
+      response.set_header('X-Ratelimit-Cost', bucket_state.drained)
       response.set_header('X-Ratelimit-Level', bucket_state.level)
       response.set_header('X-Ratelimit-Capacity', bucket_state.capacity)
     end
@@ -84,6 +86,7 @@ RSpec.describe "Perfect Rails example" do
 
       if last_response.headers["X-Ratelimit-Retry-After"].present?
         expect(last_response.status).to eq 429
+        expect(last_response.headers["X-Ratelimit-Cost"]).to be_present
         expect(last_response.headers["X-Ratelimit-Capacity"]).to be_present
         expect(last_response.headers["X-Ratelimit-Level"]).to be_present
 
@@ -91,6 +94,7 @@ RSpec.describe "Perfect Rails example" do
         break
       else
         expect(last_response.status).to eq 200
+        expect(last_response.headers["X-Ratelimit-Cost"]).to be_present
         expect(last_response.headers["X-Ratelimit-Capacity"]).to be_present
         expect(last_response.headers["X-Ratelimit-Level"]).to be_present
         expect(last_response.headers["X-Ratelimit-Retry-After"]).to_not be_present
@@ -101,6 +105,7 @@ RSpec.describe "Perfect Rails example" do
     header "testrun", testrun_id
     get '/perfect'
     expect(last_response.status).to eq 200
+    expect(last_response.headers["X-Ratelimit-Cost"]).to be_present
     expect(last_response.headers["X-Ratelimit-Capacity"]).to be_present
     expect(last_response.headers["X-Ratelimit-Level"]).to be_present
     expect(last_response.headers["X-Ratelimit-Retry-After"]).to_not be_present
