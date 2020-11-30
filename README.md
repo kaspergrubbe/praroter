@@ -140,7 +140,7 @@ def index
   sleep(2.242)
 end
 
-rescue_from Praroter::FillyBucket::Throttled do |e|
+rescue_from Praroter::Throttled do |e|
   response.set_header('X-Ratelimit-Level', e.bucket_state.level)
   response.set_header('X-Ratelimit-Capacity', e.bucket_state.capacity)
   response.set_header('X-Ratelimit-Retry-After', e.retry_in_seconds)
