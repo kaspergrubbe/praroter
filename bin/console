@@ -1,14 +1,16 @@
 #!/usr/bin/env ruby
 
 require "bundler/setup"
-require "prorate"
+require "praroter"
 
-# You can add fixtures and/or initialization code here to make experimenting
-# with your gem easier. You can also use a different console, if you like.
+require 'connection_pool'
+@redis_pool = ConnectionPool.new(size: 5, timeout: 5) do
+  Redis.new(
+    id: "Praroter-#{Thread.current.object_id}-PID-#{Process.pid}",
+    tcp_keepalive: 30,
+    reconnect_attempts: 1
+  )
+end
 
-# (If you use this, don't forget to add pry to your Gemfile!)
-# require "pry"
-# Pry.start
-
-require "irb"
-IRB.start
+require "pry"
+Pry.start

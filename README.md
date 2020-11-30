@@ -1,20 +1,19 @@
-# Prorate
+# Praroter
 
-Provides a low-level time-based throttle. Is mainly meant for situations where
-using something like Rack::Attack is not very useful since you need access to
-more variables. Under the hood, this uses a Lua script that implements the
-[Leaky Bucket](https://en.wikipedia.org/wiki/Leaky_bucket) algorithm in a single
-threaded and race condition safe way.
+This is built on top of, and forked from the excellent gem named Prorate by WeTransfer: https://github.com/WeTransfer/prorate
 
-[![Build Status](https://travis-ci.org/WeTransfer/prorate.svg?branch=master)](https://travis-ci.org/WeTransfer/prorate)
-[![Gem Version](https://badge.fury.io/rb/prorate.svg)](https://badge.fury.io/rb/prorate)
+It was forked because we had slightly different needs for our endpoints:
+
+- We bill calls based on how long the request takes (Prorate is built to bill per requests)
+- We only know how long the request took by the end of the request cycle so we have to bill after the work is done (Prorate bills in the beginning of the request)
+- Because we bill by the end of the request, we allow consumers to "owe" us time, that they have to pay back by waiting longer.
 
 ## Installation
 
 Add this line to your application's Gemfile:
 
 ```ruby
-gem 'prorate'
+gem 'praroter'
 ```
 
 And then execute:
@@ -26,123 +25,156 @@ bundle install
 Or install it yourself as:
 
 ```shell
-gem install prorate
+gem install praroter
 ```
 
-## Usage
+## Implementation
 
-The simplest mode of operation is throttling an endpoint, using the throttler
-before the action happens.
+The simplest mode of operation is throttling an endpoint, this is done by:
+
+- 1. First check if the bucket is empty
+- 2. Then do work
+- 3. Drain the amount of work done from bucket
+
+## Naïve Rails implementation
 
 Within your Rails controller:
 
 ```ruby
-t = Prorate::Throttle.new(
-    redis: Redis.new,
-    logger: Rails.logger,
-    name: "throttle-login-email",
-    limit: 20,
-    period: 5.seconds
-)
-# Add all the parameters that function as a discriminator.
-t << request.ip << params.require(:email)
-# ...and call the throttle! method
-t.throttle! # Will raise a Prorate::Throttled exception if the limit has been reached
-#
-# Your regular action happens after this point
+def index
+  # 1. First check if the bucket is empty
+  # -----------------------------------------------------------
+  redis = Redis.new
+  rate_limiter = Praroter::FillyBucket::Creator.new(redis: redis)
+  bucket = rate_limiter.setup_bucket(
+    key: [request.ip, params.require(:email)].join,
+    fill_rate: 2, # per second
+    capacity: 20 # default, acts as a buffer
+  )
+  bucket.throttle! # This will throw Prarotor::Throttled if level is negative
+  request_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+  # 2. Then do work
+  # -----------------------------------------------------------
+  sleep(2.242)
+
+  # 3. Drain the amount of work from bucket
+  # -----------------------------------------------------------
+  request_end = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  request_diff = ((request_end - request_start) * 1000).to_i
+  bucket.drain(request_diff)
+
+  render plain: "Home"
+end
 ```
 
-To capture that exception, in the controller
+To capture that exception, add this to the controller:
 
 ```ruby
-rescue_from Prorate::Throttled do |e|
-  response.set_header('Retry-After', e.retry_in_seconds.to_s)
+rescue_from Praroter::Throttled do |e|
+  response.set_header('X-Ratelimit-Level', e.bucket_state.level)
+  response.set_header('X-Ratelimit-Capacity', e.bucket_state.capacity)
+  response.set_header('X-Ratelimit-Retry-After', e.retry_in_seconds)
   render nothing: true, status: 429
 end
 ```
 
-### Throttling and checking status
+## Prettier Rails implementation
 
-More exquisite control can be achieved by combining throttling (see previous
-step) and - in subsequent calls - checking the status of the throttle before
-invoking the throttle. **When you call `throttle!`, you add tokens to the leaky bucket.**
-
-Let's say you have an endpoint that not only needs throttling, but you want to
-ban [credential stuffers](https://en.wikipedia.org/wiki/Credential_stuffing)
-outright. This is a multi-step process:
-
-1. Respond with a 429 if the discriminators of the request would land in an
-  already blocking 'credential-stuffing'-throttle
-1. Run your regular throttling
-1. Perform your sign in action
-1. If the sign in was unsuccessful, add the discriminators to the
-  'credential-stuffing'-throttle
-
-In your controller that would look like this:
+Within your initializers:
 
 ```ruby
-t = Prorate::Throttle.new(
-    redis: Redis.new,
-    logger: Rails.logger,
-    name: "credential-stuffing",
-    limit: 20,
-    period: 20.minutes
-)
-# Add all the parameters that function as a discriminator.
-t << request.ip
-# And before anything else, check whether it is throttled
-if t.status.throttled?
-  response.set_header('Retry-After', t.status.remaining_throttle_seconds.to_s)
-  render(nothing: true, status: 429) and return
-end
+require 'prarotor'
 
-# run your regular throttles for the endpoint
-other_throttles.map(:throttle!)
-# Perform your sign in logic..
-
-user = YourSignInLogic.valid?(
-  email: params[:email],
-  password: params[:password]
-)
-
-# Add the request to the credential stuffing throttle if we didn't succeed
-t.throttle! unless user
-
-# the rest of your action
+redis = Redis.new
+Rails.configuration.rate_limiter = Praroter::FillyBucket::Creator.new(redis: redis)
 ```
 
-To capture that exception, in the controller
+Within your Rails controller:
 
 ```ruby
-rescue_from Prorate::Throttled do |e|
-  response.set_header('Retry-After', e.retry_in_seconds.to_s)
+def index
+  # 1. First check if the bucket is empty
+  # -----------------------------------------------------------
+  ratelimit_bucket.throttle!
+
+  # 3. Drain the amount of work from bucket
+  # -----------------------------------------------------------
+  ratelimit_bucket.drain_block do
+    # 2. Then do work
+    # ---------------------------------------------------------
+    sleep(2.242)
+  end
+end
+
+protected
+
+def ratelimit_bucket
+  @ratelimit_bucket ||= Rails.configuration.rate_limiter.setup_bucket(
+    key: [request.ip, params.require(:email)].join,
+    fill_rate: 2, # per second
+    capacity: 20 # default, acts as a buffer
+  )
+end
+```
+
+## Perfect Rails implementation
+
+Within your initializers:
+
+```ruby
+require 'prarotor'
+
+redis = Redis.new
+Rails.configuration.rate_limiter = Praroter::FillyBucket::Creator.new(redis: redis)
+```
+
+Within your Rails controller:
+
+```ruby
+around_action :api_ratelimit
+
+def index
+  # 2. Then do work
+  # ---------------------------------------------------------
+  sleep(2.242)
+end
+
+rescue_from Praroter::FillyBucket::Throttled do |e|
+  response.set_header('X-Ratelimit-Level', e.bucket_state.level)
+  response.set_header('X-Ratelimit-Capacity', e.bucket_state.capacity)
+  response.set_header('X-Ratelimit-Retry-After', e.retry_in_seconds)
   render nothing: true, status: 429
 end
-```
 
-## Using just the leaky bucket
+protected
 
-There is also an object for using the heart of Prorate (the leaky bucket) without blocking or exceptions. This is useful
-if you want to implement a more generic rate limiting solution and customise it in a fancier way. The leaky bucket on
-it's own provides the following conveniences only:
+def api_ratelimit
+  # 1. First check if the bucket is empty
+  # -----------------------------------------------------------
+  ratelimit_bucket.throttle!
 
-* Track the number of tokens added and the number of tokens that have leaked
-* Tracks whether a specific token fillup has overflown the bucket. This is only tracked momentarily if the bucket is limited
+  # 3. Drain the amount of work from bucket
+  # -----------------------------------------------------------
+  bucket_state = ratelimit_bucket.drain_block do
+    yield
+  end
+  response.set_header('X-Ratelimit-Level', bucket_state.level)
+  response.set_header('X-Ratelimit-Capacity', bucket_state.capacity)
+end
 
-Level and leak rate are computed and provided as Floats instead of Integers (in the Throttle class).
-To use it, employ the `LeakyBucket` object:
-
-```ruby
-# The leak_rate is in tokens per second
-leaky_bucket = Prorate::LeakyBucket.new(redis: Redis.new, redis_key_prefix: "user123", leak_rate: 0.8, bucket_capacity: 2)
-leaky_bucket.state.level #=> will return 0.0
-leaky_bucket.state.full? #=> will return "false"
-state_after_add = leaky_bucket.fillup(2) #=> returns a State object_
-state_after_add.full? #=> will return "true"
-state_after_add.level #=> will return 2.0
+def ratelimit_bucket
+  @ratelimit_bucket ||= Rails.configuration.rate_limiter.setup_bucket(
+    key: [request.ip, params.require(:email)].join,
+    fill_rate: 2, # per second
+    capacity: 20 # default, acts as a buffer
+  )
+end
 ```
 
 ## Why Lua?
+
+Praroter is a fork of Prorate, here's what they are saying about the choice of Lua:
 
 Prorate is implementing throttling using the "Leaky Bucket" algorithm and is extensively described [here](https://github.com/WeTransfer/prorate/blob/master/lib/prorate/throttle.rb). The implementation is using a Lua script, because is the only language available which runs _inside_ Redis. Thanks to the speed benefits of Lua the script runs fast enough to apply it on every throttle call.
 
@@ -159,7 +191,7 @@ To install this gem onto your local machine, run `bundle exec rake install`. To 
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/WeTransfer/prorate.
+Bug reports and pull requests are welcome on GitHub at https://github.com/kaspergrubbe/praroter.
 
 ## License
 

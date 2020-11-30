@@ -1,4 +1,4 @@
-module Prorate
+module Praroter
   class NullPool < Struct.new(:conn)
     def with
       yield conn

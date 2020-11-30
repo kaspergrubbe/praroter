@@ -1,4 +1,4 @@
-module Prorate
+module Praroter
   module NullLogger
     def self.debug(*); end
 

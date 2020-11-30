@@ -1,6 +1,6 @@
 # Runs a mild benchmark and prints out the average time a call to 'throttle!' takes.
 
-require 'prorate'
+require 'praroter'
 require 'benchmark'
 require 'redis'
 require 'securerandom'
@@ -9,22 +9,24 @@ def average_ms(ary)
   ary.map { |x| x * 1000 }.inject(0, &:+) / ary.length
 end
 
-r = Redis.new
+redis = Redis.new
 
-# 4000000.times do
-#   random1 = SecureRandom.hex(10)
-#   random2 = SecureRandom.hex(10)
-#   r.set(random1,random2)
-# end
+script_path = File.join(__dir__, "lib", "praroter", "filly_bucket.lua").gsub("/scripts", "")
+LUA_SCRIPT_CODE = File.read(script_path)
+LUA_SCRIPT_HASH = Digest::SHA1.hexdigest(LUA_SCRIPT_CODE)
+redis_script_hash = redis.script(:load, LUA_SCRIPT_CODE)
 
-logz = Logger.new(STDERR)
-logz.level = Logger::FATAL # block out most stuff
+raise "LUA/REDIS SCRIPT MISMATCH" if LUA_SCRIPT_HASH != redis_script_hash
 
 times = []
 15.times do
-  id = SecureRandom.hex(10)
   times << Benchmark.realtime {
-    r.evalsha('c95c5f1197cef04ec4afd7d64760f9175933e55a', [], [id, 120, 50, 10]) # values beyond 120 chosen more or less at random
+    key = "api"
+    redis.evalsha(
+      redis_script_hash,
+      keys: ["filly_bucket.#{key}.bucket_level", "filly_bucket.#{key}.last_updated"],
+      argv: [120, 50, 10]
+    )
   }
 end
 
@@ -35,11 +37,11 @@ end
 
 times = []
 15.times do
-  sec, _ = r.time # Use Redis time instead of the system timestamp, so that all the nodes are consistent
+  sec, _ = redis.time # Use Redis time instead of the system timestamp, so that all the nodes are consistent
   ts = sec.to_i # All Redis results are strings
   k = key_for_ts(ts)
   times << Benchmark.realtime {
-    r.multi do |txn|
+    redis.multi do |txn|
       # Increment the counter
       txn.incr(k)
       txn.expire(k, 120)

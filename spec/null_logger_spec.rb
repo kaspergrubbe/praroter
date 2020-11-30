@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe Prorate::NullLogger do
+describe Praroter::NullLogger do
   it 'accepts calls that a Logger would' do
     subject = described_class
 

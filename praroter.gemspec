@@ -1,17 +1,16 @@
-
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'prorate/version'
+require 'praroter/version'
 
 Gem::Specification.new do |spec|
-  spec.name          = "prorate"
-  spec.version       = Prorate::VERSION
-  spec.authors       = ["Julik Tarkhanov"]
-  spec.email         = ["me@julik.nl"]
+  spec.name          = "praroter"
+  spec.version       = Praroter::VERSION
+  spec.authors       = ["Kasper Grubbe", "Julik Tarkhanov"]
+  spec.email         = ["praroter@kaspergrubbe.com"]
 
   spec.summary       = %q{Time-restricted rate limiter using Redis}
   spec.description   = %q{Can be used to implement all kinds of throttles}
-  spec.homepage      = "https://github.com/WeTransfer/prorate"
+  spec.homepage      = "https://github.com/kaspergrubbe/praroter"
   spec.license       = "MIT"
 
   # Prevent pushing this gem to RubyGems.org. To allow pushes either set the 'allowed_push_host'
@@ -35,4 +34,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'wetransfer_style', '0.6.5'
   spec.add_development_dependency 'yard', '~> 0.9'
   spec.add_development_dependency 'pry', '~> 0.13.1'
+
+  spec.add_development_dependency 'rails', '~> 6.0.3'
+  spec.add_development_dependency 'rspec-rails'
 end
