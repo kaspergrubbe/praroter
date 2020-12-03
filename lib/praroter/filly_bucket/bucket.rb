@@ -9,6 +9,10 @@ module Praroter
         @fill_rate = fill_rate
         @capacity = capacity
         @creator = creator
+
+        raise ArgumentError, "key must be a string" if @key.class != String
+        raise ArgumentError, "fill_rate must be an integer" if @fill_rate.class != Integer
+        raise ArgumentError, "capacity must be an integer" if @capacity.class != Integer
       end
 
       def state
@@ -33,7 +37,9 @@ module Praroter
       end
 
       def drain(amount)
-        raise ArgumentError, "drain amount must be positive" if amount < 0
+        raise ArgumentError, "drain amount must be an integer" if amount.class != Integer
+        raise ArgumentError, "drain amount must be a positive number" if amount < 0
+
         @creator.run_lua_bucket_script(self, amount)
       end
 
