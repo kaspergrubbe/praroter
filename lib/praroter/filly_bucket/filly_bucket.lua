@@ -33,19 +33,19 @@ local new_bucket_level = bucket_level + (fill_rate * dt) - scoop
 -- and _then_ and add the tokens we fillup with
 new_bucket_level = math.min(bucket_capacity, new_bucket_level)
 
--- Compute the key TTL for the bucket. We are interested in how long it takes the bucket
--- to leak all the way to bucket_capacity, as this is the time when the values stay relevant. We pad with 1 second
--- to have a little cushion.
-local key_lifetime = nil
-if new_bucket_level < 0 then -- if new_bucket_level is negative, then the TTL need to be longer
-  key_lifetime = math.ceil((math.abs(bucket_capacity - new_bucket_level) / fill_rate) + 1)
-else
-  key_lifetime = math.ceil((bucket_capacity / fill_rate) + 1)
-end
-
 if new_bucket_level == bucket_capacity then
   return {new_bucket_level, bucket_capacity, fill_rate, scoop}
 else
+  -- Compute the key TTL for the bucket. We are interested in how long it takes the bucket
+  -- to leak all the way to bucket_capacity, as this is the time when the values stay relevant. We pad with 1 second
+  -- to have a little cushion.
+  local key_lifetime = nil
+  if new_bucket_level < 0 then -- if new_bucket_level is negative, then the TTL need to be longer
+    key_lifetime = math.ceil((math.abs(bucket_capacity - new_bucket_level) / fill_rate) + 1)
+  else
+    key_lifetime = math.ceil((bucket_capacity / fill_rate) + 1)
+  end
+
   -- Save the new bucket level
   redis.call("SETEX", bucket_level_key, key_lifetime, new_bucket_level)
 
