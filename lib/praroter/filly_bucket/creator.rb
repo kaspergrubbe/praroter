@@ -18,12 +18,12 @@ module Praroter
           begin
             # The script returns a tuple of "whole tokens, microtokens"
             # to be able to smuggle the float across (similar to Redis TIME command)
-            new_bucket_level, bucket_capacity, fill_rate = r.evalsha(
+            new_bucket_level, bucket_capacity, fill_rate, scoop = r.evalsha(
               LUA_SCRIPT_HASH,
               keys: [bucket.level_key, bucket.last_updated_key],
               argv: [bucket.capacity, bucket.fill_rate, amount]
             )
-            BucketState.new(new_bucket_level, bucket_capacity, fill_rate, amount)
+            BucketState.new(new_bucket_level, bucket_capacity, fill_rate, scoop)
           rescue Redis::CommandError => e
             if e.message.include? "NOSCRIPT"
               # The Redis server has never seen this script before. Needs to run only once in the entire lifetime

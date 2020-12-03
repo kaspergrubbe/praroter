@@ -44,7 +44,7 @@ else
 end
 
 if new_bucket_level == bucket_capacity then
-  return {new_bucket_level, bucket_capacity, fill_rate}
+  return {new_bucket_level, bucket_capacity, fill_rate, scoop}
 else
   -- Save the new bucket level
   redis.call("SETEX", bucket_level_key, key_lifetime, new_bucket_level)
@@ -53,5 +53,5 @@ else
   -- can be correctly determined on the next invocation
   redis.call("SETEX", last_updated_key, key_lifetime, now)
 
-  return {new_bucket_level, bucket_capacity, fill_rate}
+  return {new_bucket_level, bucket_capacity, fill_rate, scoop}
 end
