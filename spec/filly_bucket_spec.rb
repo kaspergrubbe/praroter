@@ -3,21 +3,21 @@ require 'securerandom'
 require 'connection_pool'
 
 describe Praroter::FillyBucket::Bucket do
-  describe 'in a happy path' do
-    # There is timing involved in Praroter, and some issues can be intermittent.
-    # To make sure _both_ code and tests are resilient, we should run multiple iterations
-    # of the test and do it in a reproducible way.
-    # one of the ways to make it reproducible is to use random names which are reproduced
-    # with the same RSpec seed
-    randomness = Random.new(RSpec.configuration.seed)
-    generate_random_bucket_name = -> {
-      (1..32).map do
-        # bytes 97 to 122 are printable lowercase a-z
-        randomness.rand(97..122)
-      end.pack("C*")
-    }
+  # There is timing involved in Praroter, and some issues can be intermittent.
+  # To make sure _both_ code and tests are resilient, we should run multiple iterations
+  # of the test and do it in a reproducible way.
+  # one of the ways to make it reproducible is to use random names which are reproduced
+  # with the same RSpec seed
+  randomness = Random.new(RSpec.configuration.seed)
+  random_bucket_name = -> {
+    (1..32).map do
+      # bytes 97 to 122 are printable lowercase a-z
+      randomness.rand(97..122)
+    end.pack("C*")
+  }
 
-    let(:bucket_name) { generate_random_bucket_name.call }
+  describe 'in a happy path' do
+    let(:bucket_name) { random_bucket_name.call }
     let(:r) { Redis.new }
     let(:pool) { ConnectionPool.new { r } }
 
@@ -86,7 +86,8 @@ describe Praroter::FillyBucket::Bucket do
       bucket = creator.setup_bucket(key: bucket_name, fill_rate: 1, capacity: 10)
 
       expect { bucket.drain(0) }.to_not raise_error
-      expect { bucket.drain(-1) }.to raise_error(ArgumentError, "drain amount must be positive")
+      expect { bucket.drain(-1) }.to raise_error(ArgumentError, "drain amount must be a positive number")
+      expect { bucket.drain(nil) }.to raise_error(ArgumentError, "drain amount must be an integer")
     end
 
     it 'should bounce back to capacity after being negative' do
@@ -110,6 +111,57 @@ describe Praroter::FillyBucket::Bucket do
       end
 
       expect(bucket.state.level).to eq(10)
+    end
+  end
+
+  describe 'key generation' do
+    it 'should interpolate the keys' do
+      creator = Praroter::FillyBucket::Creator.new(redis: ConnectionPool.new { Redis.new })
+      b1 = Praroter::FillyBucket::Bucket.new("user42", 250, 10_000, creator)
+
+      expect(b1.level_key).to eq "filly_bucket.user42.bucket_level"
+      expect(b1.last_updated_key).to eq "filly_bucket.user42.last_updated"
+    end
+
+    it 'should interpolate the keys' do
+      creator = Praroter::FillyBucket::Creator.new(redis: ConnectionPool.new { Redis.new })
+      b2 = creator.setup_bucket(key: "user43", fill_rate: 250, capacity: 10_000)
+
+      expect(b2.level_key).to eq "filly_bucket.user43.bucket_level"
+      expect(b2.last_updated_key).to eq "filly_bucket.user43.last_updated"
+    end
+  end
+
+  describe 'draining' do
+    it 'should drain multiple buckets' do
+      creator = Praroter::FillyBucket::Creator.new(redis: ConnectionPool.new { Redis.new })
+      b3 = creator.setup_bucket(key: random_bucket_name.call, fill_rate: 250, capacity: 10_000)
+      b4 = creator.setup_bucket(key: random_bucket_name.call, fill_rate: 250, capacity: 10_000)
+
+      bs1 = b3.drain(1_000)
+      expect(bs1.drained).to eq 1_000
+      expect(bs1.level).to eq 9_000
+      expect(bs1.capacity).to eq 10_000
+
+      bs2 = b4.drain(2_000)
+      expect(bs2.drained).to eq 2_000
+      expect(bs2.level).to eq 8_000
+      expect(bs2.capacity).to eq 10_000
+    end
+
+    it 'should drain same bucket multiple times' do
+      creator = Praroter::FillyBucket::Creator.new(redis: ConnectionPool.new { Redis.new })
+      bucket = creator.setup_bucket(key: random_bucket_name.call, fill_rate: 250, capacity: 10_000)
+
+      bs1 = bucket.drain(1)
+      expect(bs1.drained).to eq 1
+      expect(bs1.level).to eq 9_999
+      expect(bs1.capacity).to eq 10_000
+
+      bs1 = bucket.drain(1_000)
+      expect(bs1.drained).to eq 1_000
+      expect(bs1.level).to eq 8_999
+      expect(bs1.capacity).to eq 10_000
     end
   end
 end
