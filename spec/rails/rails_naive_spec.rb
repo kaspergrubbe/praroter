@@ -72,7 +72,7 @@ RSpec.describe "Naive Rails example" do
 
   it 'should respond correctly' do
     loop do
-      header "testrun", testrun_id
+      header "testrun", testrun_id.to_s
       get '/naive'
 
       if last_response.headers["X-Ratelimit-Retry-After"].present?
@@ -93,7 +93,7 @@ RSpec.describe "Naive Rails example" do
     end
 
     # We've waited the amount of time the API told us to wait, the next call should pass
-    header "testrun", testrun_id
+    header "testrun", testrun_id.to_s
     get '/naive'
     expect(last_response.status).to eq 200
     expect(last_response.headers["X-Ratelimit-Cost"]).to be_present

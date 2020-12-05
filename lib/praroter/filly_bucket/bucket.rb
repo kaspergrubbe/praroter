@@ -5,12 +5,19 @@ module Praroter
       attr_reader :key, :fill_rate, :capacity
 
       def initialize(key, fill_rate, capacity, creator)
-        @key = key
+        @key = case key
+        when String
+          key
+        when Integer
+          key.to_s
+        when Array
+          key.join
+        end
         @fill_rate = fill_rate
         @capacity = capacity
         @creator = creator
 
-        raise ArgumentError, "key must be a string" if @key.class != String
+        raise ArgumentError, "key must be a string, integer or an array" if @key.class != String
         raise ArgumentError, "fill_rate must be an integer" if @fill_rate.class != Integer
         raise ArgumentError, "capacity must be an integer" if @capacity.class != Integer
       end

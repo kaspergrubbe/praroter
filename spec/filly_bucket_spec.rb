@@ -16,11 +16,11 @@ describe Praroter::FillyBucket::Bucket do
     end.pack("C*")
   }
 
-  describe 'in a happy path' do
-    let(:bucket_name) { random_bucket_name.call }
-    let(:r) { Redis.new }
-    let(:pool) { ConnectionPool.new { r } }
+  let(:bucket_name) { random_bucket_name.call }
+  let(:r) { Redis.new }
+  let(:pool) { ConnectionPool.new { r } }
 
+  describe 'in a happy path' do
     it 'is able to use a ConnectionPool' do
       creator = Praroter::FillyBucket::Creator.new(redis: pool)
       bucket = creator.setup_bucket(key: bucket_name, fill_rate: 1, capacity: 2)
@@ -114,7 +114,32 @@ describe Praroter::FillyBucket::Bucket do
     end
   end
 
-  describe 'key generation' do
+  describe "bucket keys" do
+    it 'it should allow an integer as bucket key' do
+      creator = Praroter::FillyBucket::Creator.new(redis: pool)
+      bucket = creator.setup_bucket(key: 1948371432789, fill_rate: 1, capacity: 2)
+      expect(bucket.key).to eq "1948371432789"
+    end
+
+    it 'it should allow an array as bucket key' do
+      creator = Praroter::FillyBucket::Creator.new(redis: pool)
+      bucket = creator.setup_bucket(key: ["user", "42"], fill_rate: 1, capacity: 2)
+      expect(bucket.key).to eq "user42"
+    end
+
+    it 'it should allow a string as bucket key' do
+      creator = Praroter::FillyBucket::Creator.new(redis: pool)
+      bucket = creator.setup_bucket(key: "iamabucketwhatareyou", fill_rate: 1, capacity: 2)
+      expect(bucket.key).to eq "iamabucketwhatareyou"
+    end
+
+    it 'it should throw an error on an unsupported datatype' do
+      creator = Praroter::FillyBucket::Creator.new(redis: pool)
+      expect { creator.setup_bucket(key: :iamabucketwhatareyou, fill_rate: 1, capacity: 2) }.to raise_error(ArgumentError, "key must be a string, integer or an array")
+    end
+  end
+
+  describe 'redis key generation' do
     it 'should interpolate the keys' do
       creator = Praroter::FillyBucket::Creator.new(redis: ConnectionPool.new { Redis.new })
       b1 = Praroter::FillyBucket::Bucket.new("user42", 250, 10_000, creator)
