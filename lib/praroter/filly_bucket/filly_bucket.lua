@@ -28,19 +28,13 @@ local last_updated = tonumber(redis.call("GET", last_updated_key)) or now -- use
 
 -- Add the number of tokens dripped since last call
 local dt = now - last_updated
-local new_bucket_level = bucket_level + (fill_rate * dt) - scoop
+local new_bucket_level = bucket_level + (fill_rate * dt)
 
 -- and _then_ and add the tokens we fillup with
-new_bucket_level = math.min(bucket_capacity, new_bucket_level)
+new_bucket_level = math.min(bucket_capacity, new_bucket_level) - scoop
 
 if new_bucket_level == bucket_capacity then
-  -- We subtract new_bucket_level with scoop to maintain expectations
-  -- there are cases where (bucket_level + (fill_rate * dt) - scoop) will be higher than
-  -- new_bucket_level, and in those cases consumers will expect to see:
-  -- {9995, 10000, 250, 5}
-  -- instead of:
-  -- {10000, 10000, 250, 5}
-  return {new_bucket_level - scoop, bucket_capacity, fill_rate, scoop}
+  return {new_bucket_level, bucket_capacity, fill_rate, scoop}
 else
   -- Compute the key TTL for the bucket. We are interested in how long it takes the bucket
   -- to leak all the way to bucket_capacity, as this is the time when the values stay relevant. We pad with 1 second

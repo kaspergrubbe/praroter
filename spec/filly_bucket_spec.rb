@@ -69,13 +69,13 @@ describe Praroter::FillyBucket::Bucket do
       bucket_state = bucket.drain(30)
       expect(bucket_state).not_to be_full
       expect(bucket_state).to be_empty
-      expect(bucket_state.level).to be_within(0.1).of(-9)
+      expect(bucket_state.level).to be_within(0.1).of(-10)
 
       # We need to make sure the keys which we set have a TTL and that the TTL
       # is reasonable. We cannot check whether the key has been expired or not because deletion in
       # Redis is somewhat best-effort - there is no guarantee that something will be deleted at
       # the given TTL, so testing for it is not very useful
-      difference = (bucket_state.level..bucket.capacity).size + 1
+      difference = (bucket_state.level..bucket.capacity).size
 
       expect(r.ttl(bucket.level_key)).to be_within(0.5).of(difference)
       expect(r.ttl(bucket.last_updated_key)).to be_within(0.5).of(difference)
